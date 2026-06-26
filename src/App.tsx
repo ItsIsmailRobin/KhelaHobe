@@ -150,6 +150,8 @@ export default function App() {
   const [streamUrl, setStreamUrl] = useState("");
   const [needsUnmute, setNeedsUnmute] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  // True only after the video's "playing" event fires — meaning frames are actually visible
+  const [videoPlaying, setVideoPlaying] = useState(false);
 
   const iosDevice = isIOS();
   const touchDev = isTouch();
@@ -205,20 +207,35 @@ export default function App() {
         everRef.current = true;
       })
       .catch(() => {
-        setTimeout(() => {
-          if (deadRef.current || !videoRef.current) return;
-          const v = videoRef.current;
-          v.muted = true;
-          v.play()
-            .then(() => {
-              setStatus("playing");
-              everRef.current = true;
+        // Unmuted play blocked by autoplay policy — try muted immediately (no 200ms timeout)
+        if (deadRef.current || !videoRef.current) return;
+        const v = videoRef.current;
+        v.muted = true;
+        v.play()
+          .then(() => {
+            if (deadRef.current) return;
+            setStatus("playing");
+            everRef.current = true;
+            // After muted play is established, try to unmute programmatically.
+            // Browsers only restrict play() calls — setting .muted = false after
+            // play() resolves is allowed without a user gesture.
+            const sv = previousVolumeRef.current || soundVolume;
+            v.volume = sv;
+            v.muted = false;
+            if (!v.muted) {
+              // Unmute worked — restore volume state
+              setVolume(sv);
+              saveVolume(sv);
+              setNeedsUnmute(false);
+            } else {
+              // Strict browser (e.g. iOS) kept it muted — ask user to tap
               setNeedsUnmute(true);
-            })
-            .catch(() => {
-              setNeedsUnmute(true);
-            });
-        }, 200);
+            }
+          })
+          .catch(() => {
+            // Even muted play failed — stay in "Connecting to stream".
+            // FRAG_BUFFERED / canplay events will retry automatically.
+          });
       });
   }, [needsUnmute, volume]);
 
@@ -309,7 +326,7 @@ export default function App() {
     if (deadRef.current) return;
     const video = videoRef.current;
     if (!video || !streamUrl) return;
-    if (!everRef.current) setStatus("loading");
+    if (!everRef.current) { setStatus("loading"); setVideoPlaying(false); }
     cleanup();
 
     if (needsUnmute) video.muted = true;
@@ -361,7 +378,7 @@ export default function App() {
     const video = videoRef.current;
     if (!video) return;
 
-    const onPlaying = () => { setStatus("playing"); setIsPaused(false); isPausedRef.current = false; everRef.current = true; };
+    const onPlaying = () => { setStatus("playing"); setIsPaused(false); isPausedRef.current = false; everRef.current = true; setVideoPlaying(true); };
     const onPause = () => { setIsPaused(true); isPausedRef.current = true; };
     const onCanPlay = () => { if (video.paused && !isPausedRef.current) attemptPlay(); };
     const onVolChange = () => {
@@ -487,6 +504,7 @@ export default function App() {
     everRef.current = false;
     isPausedRef.current = false;
     setIsPaused(false);
+    setVideoPlaying(false);
     initPlayer();
   }, [initPlayer]);
 
@@ -519,8 +537,8 @@ export default function App() {
     if (v) applyVolume(v, next);
   }, []);
 
-  const isInitialLoading = status === "loading" && !everRef.current;
-  const shouldShowUnmuteOverlay = needsUnmute && status !== "error";
+  const isInitialLoading = status === "loading" && !videoPlaying;
+  const shouldShowUnmuteOverlay = needsUnmute && videoPlaying && status !== "error";
   const controlsVisible = touchDev || showControls || status !== "playing" || isPaused || needsUnmute || showClearConfirm;
 
   return (
@@ -580,6 +598,7 @@ export default function App() {
         className="absolute inset-0 h-full w-full object-contain bg-black"
         playsInline
         autoPlay
+        muted
         controls={false}
         onClick={handlePlayerTap}
         onWebkitBeginFullscreen={() => setIsFullscreen(true)}
