@@ -216,21 +216,11 @@ export default function App() {
             if (deadRef.current) return;
             setStatus("playing");
             everRef.current = true;
-            // After muted play is established, try to unmute programmatically.
-            // Browsers only restrict play() calls — setting .muted = false after
-            // play() resolves is allowed without a user gesture.
-            const sv = previousVolumeRef.current || soundVolume;
-            v.volume = sv;
-            v.muted = false;
-            if (!v.muted) {
-              // Unmute worked — restore volume state
-              setVolume(sv);
-              saveVolume(sv);
-              setNeedsUnmute(false);
-            } else {
-              // Strict browser (e.g. iOS) kept it muted — ask user to tap
-              setNeedsUnmute(true);
-            }
+            // Keep playing muted — show "Tap to unmute" overlay.
+            // DO NOT set v.muted = false here: browsers re-evaluate autoplay
+            // policy on unmute and will immediately pause the video (still picture).
+            // Unmuting happens in unmutePlayer() which is called by the user's tap.
+            setNeedsUnmute(true);
           })
           .catch(() => {
             // Even muted play failed — stay in "Connecting to stream".
@@ -599,6 +589,7 @@ export default function App() {
         playsInline
         autoPlay
         muted
+        loop
         controls={false}
         onClick={handlePlayerTap}
         onWebkitBeginFullscreen={() => setIsFullscreen(true)}
