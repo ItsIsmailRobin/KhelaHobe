@@ -412,57 +412,6 @@ export default function App() {
   }, [isFullscreen]);
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el || !touchDev) return;
-
-    let startDist = 0;
-    let handled = false;
-
-    const dist = (touches: TouchList) => {
-      const [a, b] = [touches[0], touches[1]];
-      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-    };
-
-    const onTouchStart = (e: TouchEvent) => {
-      if (!isFullscreen) return;
-      if (e.touches.length === 2) {
-        startDist = dist(e.touches);
-        handled = false;
-      }
-    };
-    const onTouchMove = (e: TouchEvent) => {
-      if (!isFullscreen || handled) return;
-      if (e.touches.length === 2 && startDist > 0) {
-        const delta = dist(e.touches) - startDist;
-        if (delta > 40) {
-          setFilledMode(true);
-          handled = true;
-        } else if (delta < -40) {
-          setFilledMode(false);
-          handled = true;
-        }
-      }
-    };
-    const onTouchEnd = (e: TouchEvent) => {
-      if (e.touches.length < 2) {
-        startDist = 0;
-        handled = false;
-      }
-    };
-
-    el.addEventListener("touchstart", onTouchStart, { passive: true });
-    el.addEventListener("touchmove", onTouchMove, { passive: true });
-    el.addEventListener("touchend", onTouchEnd, { passive: true });
-    el.addEventListener("touchcancel", onTouchEnd, { passive: true });
-    return () => {
-      el.removeEventListener("touchstart", onTouchStart);
-      el.removeEventListener("touchmove", onTouchMove);
-      el.removeEventListener("touchend", onTouchEnd);
-      el.removeEventListener("touchcancel", onTouchEnd);
-    };
-  }, [isFullscreen, touchDev]);
-
-  useEffect(() => {
     const show = () => {
       setShowControls(true);
       if (hideRef.current) window.clearTimeout(hideRef.current);
@@ -595,7 +544,7 @@ export default function App() {
     if (v) applyVolume(v, next);
   }, []);
 
-  const videoStyle: React.CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%" };
+  const videoStyle: React.CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%", touchAction: "none" };
   const objectFitClass = filledMode ? "object-cover" : "object-contain";
 
   const isInitialLoading = status === "loading" && !videoPlaying;
@@ -652,9 +601,11 @@ export default function App() {
       </div>
 
       <div
-        className="absolute right-0 top-0 z-20 transition-opacity duration-500 opacity-80"
+        className={`absolute right-0 top-0 z-20 transition-opacity duration-300 ${
+          controlsVisible ? "opacity-100" : "opacity-0"
+        }`}
         style={{
-          pointerEvents: "auto",
+          pointerEvents: controlsVisible ? "auto" : "none",
           paddingTop: "max(12px, env(safe-area-inset-top))",
           paddingRight: "max(16px, env(safe-area-inset-right))",
         }}
@@ -843,6 +794,25 @@ export default function App() {
 
 
             <ControlBtn
+              onClick={() => setFilledMode((v) => !v)}
+              aria-label={filledMode ? "Fit to screen" : "Fill screen"}
+              title={filledMode ? "Fit to screen" : "Fill screen"}
+              isTouch={touchDev}
+            >
+              <svg className="h-4 w-4 sm:h-5 sm:w-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 8V5a1 1 0 0 1 1-1h3" />
+                <path d="M16 4h3a1 1 0 0 1 1 1v3" />
+                <path d="M20 16v3a1 1 0 0 1-1 1h-3" />
+                <path d="M8 20H5a1 1 0 0 1-1-1v-3" />
+                {filledMode ? (
+                  <rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor" stroke="none" />
+                ) : (
+                  <rect x="7" y="9" width="10" height="6" rx="1" fill="currentColor" stroke="none" />
+                )}
+              </svg>
+            </ControlBtn>
+
+            <ControlBtn
               onClick={toggleFullscreen}
               aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
               title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
@@ -898,10 +868,10 @@ function ControlBtn({
 }
 
 function StatusBadge({ status, onClick }: { status: string; onClick: () => void }) {
-  const cfg: Record<string, { label: string; dot: string; bg: string; text: string }> = {
-    loading: { label: "Connecting", dot: "bg-amber-300 animate-pulse", bg: "bg-white/[0.04] border-white/[0.07]", text: "text-white/65" },
-    playing: { label: "Live", dot: "bg-red-500 animate-pulse", bg: "bg-white/[0.04] border-white/[0.07]", text: "text-white/70" },
-    error: { label: "Offline", dot: "bg-zinc-500", bg: "bg-white/[0.04] border-white/[0.07]", text: "text-white/65" },
+  const cfg: Record<string, { label: string; dot: string; text: string }> = {
+    loading: { label: "Connecting", dot: "bg-amber-300 animate-pulse", text: "text-white/70" },
+    playing: { label: "Live", dot: "bg-red-500 animate-pulse", text: "text-white/80" },
+    error: { label: "Offline", dot: "bg-zinc-500", text: "text-white/60" },
   };
   const s = cfg[status] ?? cfg.loading;
   return (
@@ -909,7 +879,7 @@ function StatusBadge({ status, onClick }: { status: string; onClick: () => void 
       type="button"
       onClick={onClick}
       aria-label="Go live"
-      className={`flex items-center gap-2 rounded-full border backdrop-blur-[2px] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] transition-all duration-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] hover:bg-white/[0.07] active:scale-95 ${s.bg} ${s.text}`}
+      className={`flex items-center gap-1.5 rounded-full bg-black/35 backdrop-blur-[2px] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors duration-300 active:scale-95 ${s.text}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
       <span>{s.label}</span>
