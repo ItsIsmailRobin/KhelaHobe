@@ -542,21 +542,55 @@ export default function App() {
     initPlayer();
   }, [initPlayer]);
 
+  // Briefly shows "Auto Refresh" in place of the Live/Connecting badge
+  // whenever the watchdog below fires an automatic reload.
+  const [autoRefreshFlash, setAutoRefreshFlash] = useState(false);
+  const autoRefreshFlashTimeoutRef = useRef<number | null>(null);
+  const triggerAutoRefresh = useCallback((durationMs: number = 1000) => {
+    manualRestart();
+    setAutoRefreshFlash(true);
+    if (autoRefreshFlashTimeoutRef.current) window.clearTimeout(autoRefreshFlashTimeoutRef.current);
+    autoRefreshFlashTimeoutRef.current = window.setTimeout(() => {
+      setAutoRefreshFlash(false);
+      autoRefreshFlashTimeoutRef.current = null;
+    }, durationMs);
+  }, [manualRestart]);
+  useEffect(() => {
+    return () => {
+      if (autoRefreshFlashTimeoutRef.current) window.clearTimeout(autoRefreshFlashTimeoutRef.current);
+    };
+  }, []);
+
   // Auto-reload: if the stream is playing (not paused by the user) but the
   // video frame is frozen (currentTime not advancing) for 5 seconds, press
-  // "Reload Stream" automatically.
+  // "Reload Stream" automatically. Also covers the "Connecting to Stream"
+  // state: if it stays stuck on "loading" for 6 seconds, auto-reload too.
   const stuckLastTimeRef = useRef(0);
   const stuckSinceRef = useRef<number | null>(null);
+  const loadingSinceRef = useRef<number | null>(null);
   useEffect(() => {
     const interval = window.setInterval(() => {
       const video = videoRef.current;
-      if (!video || deadRef.current) return;
+      if (!video || deadRef.current || document.hidden) {
+        loadingSinceRef.current = null;
+        return;
+      }
 
-      const notActive =
-        status !== "playing" ||
-        isPausedRef.current ||
-        video.paused ||
-        document.hidden;
+      // Stuck while connecting: status has been "loading" for 6s+.
+      if (status === "loading") {
+        stuckSinceRef.current = null;
+        stuckLastTimeRef.current = video.currentTime;
+        if (loadingSinceRef.current === null) {
+          loadingSinceRef.current = Date.now();
+        } else if (Date.now() - loadingSinceRef.current >= 6000) {
+          loadingSinceRef.current = null;
+          triggerAutoRefresh(6000);
+        }
+        return;
+      }
+      loadingSinceRef.current = null;
+
+      const notActive = status !== "playing" || isPausedRef.current || video.paused;
 
       if (notActive) {
         stuckSinceRef.current = null;
@@ -570,7 +604,7 @@ export default function App() {
           stuckSinceRef.current = Date.now();
         } else if (Date.now() - stuckSinceRef.current >= 5000) {
           stuckSinceRef.current = null;
-          manualRestart();
+          triggerAutoRefresh();
         }
       } else {
         stuckLastTimeRef.current = ct;
@@ -578,7 +612,8 @@ export default function App() {
       }
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [status, manualRestart]);
+  }, [status, triggerAutoRefresh]);
+
 
   const handleClearCache = useCallback(() => { setShowClearConfirm(true); }, []);
   const confirmClearCache = useCallback(() => { clearAllSiteData(); }, []);
@@ -686,7 +721,7 @@ export default function App() {
         onClick={(event) => event.stopPropagation()}
         onDoubleClick={(event) => event.stopPropagation()}
       >
-        <StatusBadge status={status} onClick={snapToLive} />
+        {autoRefreshFlash ? <AutoRefreshBadge /> : <StatusBadge status={status} onClick={snapToLive} />}
       </div>
 
       <video
@@ -919,6 +954,22 @@ function ControlBtn({
     >
       {children}
     </button>
+  );
+}
+
+function AutoRefreshBadge() {
+  return (
+    <span
+      className="flex items-center gap-1.5 rounded-full bg-black/35 backdrop-blur-[2px] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider"
+      style={{ color: "#1abfed" }}
+      aria-label="Auto Refresh enabled"
+    >
+      <span
+        className="h-1.5 w-1.5 rounded-full animate-pulse"
+        style={{ backgroundColor: "#1abfed" }}
+      />
+      <span>Auto Refresh</span>
+    </span>
   );
 }
 
