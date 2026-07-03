@@ -565,9 +565,20 @@ export default function App() {
   // video frame is frozen (currentTime not advancing) for 5 seconds, press
   // "Reload Stream" automatically. Also covers the "Connecting to Stream"
   // state: if it stays stuck on "loading" for 6 seconds, auto-reload too.
+  //
+  // There's a separate failure mode this alone didn't catch: sometimes the
+  // media clock keeps ticking (buffered audio/segments keep currentTime
+  // advancing) while the decoder silently stops producing new video frames —
+  // the badge says "Live" and currentTime moves, but the picture stays
+  // black. To catch that too, we also track the actually-decoded frame
+  // count (getVideoPlaybackQuality / webkitDecodedFrameCount) and fire the
+  // same auto-reload if it stalls for 5 seconds while "playing", even
+  // though currentTime looks fine.
   const stuckLastTimeRef = useRef(0);
   const stuckSinceRef = useRef<number | null>(null);
   const loadingSinceRef = useRef<number | null>(null);
+  const lastFrameCountRef = useRef<number | null>(null);
+  const frameStuckSinceRef = useRef<number | null>(null);
   useEffect(() => {
     const interval = window.setInterval(() => {
       const video = videoRef.current;
@@ -580,6 +591,8 @@ export default function App() {
       if (status === "loading") {
         stuckSinceRef.current = null;
         stuckLastTimeRef.current = video.currentTime;
+        frameStuckSinceRef.current = null;
+        lastFrameCountRef.current = null;
         if (loadingSinceRef.current === null) {
           loadingSinceRef.current = Date.now();
         } else if (Date.now() - loadingSinceRef.current >= 6000) {
@@ -595,7 +608,37 @@ export default function App() {
       if (notActive) {
         stuckSinceRef.current = null;
         stuckLastTimeRef.current = video.currentTime;
+        frameStuckSinceRef.current = null;
+        lastFrameCountRef.current = null;
         return;
+      }
+
+      // Decoded-frame-count watchdog: catches "loaded, currentTime moving,
+      // but picture is black because no new frames are actually being
+      // painted" — the case the currentTime check alone can miss.
+      let decodedFrames: number | null = null;
+      try {
+        if (typeof video.getVideoPlaybackQuality === "function") {
+          decodedFrames = video.getVideoPlaybackQuality().totalVideoFrames;
+        } else if (typeof (video as any).webkitDecodedFrameCount === "number") {
+          decodedFrames = (video as any).webkitDecodedFrameCount;
+        }
+      } catch {}
+
+      if (decodedFrames !== null && isFinite(decodedFrames)) {
+        if (decodedFrames === lastFrameCountRef.current) {
+          if (frameStuckSinceRef.current === null) {
+            frameStuckSinceRef.current = Date.now();
+          } else if (Date.now() - frameStuckSinceRef.current >= 5000) {
+            frameStuckSinceRef.current = null;
+            lastFrameCountRef.current = null;
+            triggerAutoRefresh();
+            return;
+          }
+        } else {
+          lastFrameCountRef.current = decodedFrames;
+          frameStuckSinceRef.current = null;
+        }
       }
 
       const ct = video.currentTime;
