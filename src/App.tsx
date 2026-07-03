@@ -650,10 +650,10 @@ export default function App() {
   // than CSS vw units — on Android, vw can go stale after entering fullscreen
   // or rotating the screen, which made the logo render at the wrong size.
   const logoHeight = containerWidth
-    ? Math.min(52, Math.max(26, containerWidth * 0.06))
+    ? Math.min(44.46, Math.max(22.23, containerWidth * 0.0513))
     : null;
   const logoMaxWidth = containerWidth
-    ? Math.min(170, Math.max(84, containerWidth * 0.24))
+    ? Math.min(145.35, Math.max(71.82, containerWidth * 0.2052))
     : null;
 
   const isInitialLoading = status === "loading" && !videoPlaying;
@@ -702,8 +702,8 @@ export default function App() {
             draggable={false}
             className="w-auto object-contain rounded-xl transition-transform duration-300 group-hover:scale-[1.04] group-active:scale-95"
             style={{
-              height: logoHeight ? `${logoHeight}px` : "clamp(26px, 6vw, 52px)",
-              maxWidth: logoMaxWidth ? `${logoMaxWidth}px` : "clamp(84px, 24vw, 170px)",
+              height: logoHeight ? `${logoHeight}px` : "clamp(22.23px, 5.13vw, 44.46px)",
+              maxWidth: logoMaxWidth ? `${logoMaxWidth}px` : "clamp(71.82px, 20.52vw, 145.35px)",
             }}
           />
         </button>
